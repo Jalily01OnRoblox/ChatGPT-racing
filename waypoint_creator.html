@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Waypoint Creator</title>
+<style>
+  body { margin: 0; overflow: hidden; }
+  canvas { display: block; background: #000; }
+</style>
+</head>
+<body>
+<canvas id="mapCanvas"></canvas>
+<script>
+const canvas = document.getElementById('mapCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const trackImage = new Image();
+trackImage.src = 'track.png'; // put track.png in the same folder
+
+trackImage.onload = () => {
+  ctx.drawImage(trackImage, 0, 0);
+  console.log("Click on the track to set waypoints...");
+};
+
+let waypoints = [];
+
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.floor(e.clientX - rect.left);
+  const y = Math.floor(e.clientY - rect.top);
+
+  waypoints.push({ x, y });
+  console.log(`{x: ${x}, y: ${y}},`);
+
+  // Draw a small red dot where you clicked
+  ctx.fillStyle = 'red';
+  ctx.beginPath();
+  ctx.arc(x, y, 4, 0, Math.PI * 2);
+  ctx.fill();
+});
+
+// Press "s" to save full waypoint array to console
+window.addEventListener('keydown', (e) => {
+  if (e.key === 's') {
+    console.log("Final waypoints array:", JSON.stringify(waypoints, null, 2));
+  }
+});
+</script>
+</body>
+</html>

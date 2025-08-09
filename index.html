@@ -1,13 +1,13 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>2D Racing Game - Embedded Track</title>
-  <style>
-    body { margin: 0; overflow: hidden; background: #000; }
-    canvas { display: block; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>2D Racing Game with Minimap & AI</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #000; }
+  canvas { display: block; }
+</style>
 </head>
 <body>
 <canvas id="gameCanvas"></canvas>
@@ -17,21 +17,21 @@ const ctx = canvas.getContext('2d');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// Embedded track image (base64 PNG)
 const trackImage = new Image();
-trackImage.src =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQACAIAAADwf7zUAAD9h2NhQlgAAP2HanVtYgAAAB5qdW1kYzJwYQARABCAAACqADibcQNjMnBhAAAANxNqdW1iAAAAR2p1bWRjMm1hABEAEIAAAKoAOJtxA3VybjpjMnBhOmJhMjQ0YmQxLTUyY2..."; // full base64 here
+trackImage.src = 'track.png'; // Must be in same folder
 
 const terrainCanvas = document.createElement('canvas');
 const terrainCtx = terrainCanvas.getContext('2d');
 
 let terrainLoaded = false;
+let MAP_SCALE = 1.5;
 
 trackImage.onload = () => {
   terrainCanvas.width = trackImage.width;
   terrainCanvas.height = trackImage.height;
   terrainCtx.drawImage(trackImage, 0, 0);
   terrainLoaded = true;
+  console.log("Track image loaded");
 };
 
 const keys = { ArrowUp: false, ArrowLeft: false, ArrowRight: false };
@@ -39,7 +39,7 @@ window.addEventListener('keydown', e => { if (keys.hasOwnProperty(e.key)) keys[e
 window.addEventListener('keyup', e => { if (keys.hasOwnProperty(e.key)) keys[e.key] = false; });
 
 class Kart {
-  constructor(x, y, color = 'red') {
+  constructor(x, y, color = 'red', ai = false) {
     this.x = x;
     this.y = y;
     this.angle = 0;
@@ -49,11 +49,13 @@ class Kart {
     this.friction = 0.05;
     this.turnSpeed = 3;
     this.color = color;
+    this.ai = ai;
+    this.targetIndex = 0;
   }
 
   getTerrainSpeedFactor() {
     if (!terrainLoaded) return 1;
-    const pixel = terrainCtx.getImageData(Math.floor(this.x), Math.floor(this.y), 1, 1).data;
+    const pixel = terrainCtx.getImageData(Math.floor(this.x / MAP_SCALE), Math.floor(this.y / MAP_SCALE), 1, 1).data;
     const color = `rgb(${pixel[0]},${pixel[1]},${pixel[2]})`;
     if (color === 'rgb(136,136,136)') return 1.0; // road
     if (color === 'rgb(0,170,0)') return 0.5;      // grass
@@ -62,19 +64,34 @@ class Kart {
   }
 
   update() {
-    const speedFactor = this.getTerrainSpeedFactor();
+    if (this.ai) {
+      let target = waypoints[this.targetIndex];
+      let dx = target.x - this.x;
+      let dy = target.y - this.y;
+      let targetAngle = Math.atan2(dy, dx) * 180 / Math.PI;
+      let angleDiff = (targetAngle - this.angle + 540) % 360 - 180;
 
-    if (keys.ArrowUp) {
-      this.speed += this.acceleration * speedFactor;
+      if (angleDiff > 5) this.angle += this.turnSpeed;
+      if (angleDiff < -5) this.angle -= this.turnSpeed;
+
+      this.speed += this.acceleration * this.getTerrainSpeedFactor();
+      if (this.speed > this.maxSpeed) this.speed = this.maxSpeed;
+
+      if (Math.hypot(dx, dy) < 30) {
+        this.targetIndex = (this.targetIndex + 1) % waypoints.length;
+      }
     } else {
-      this.speed -= this.friction;
-    }
-
-    this.speed = Math.max(0, Math.min(this.speed, this.maxSpeed * speedFactor));
-
-    if (this.speed > 0.2) {
-      if (keys.ArrowLeft) this.angle -= this.turnSpeed;
-      if (keys.ArrowRight) this.angle += this.turnSpeed;
+      const speedFactor = this.getTerrainSpeedFactor();
+      if (keys.ArrowUp) {
+        this.speed += this.acceleration * speedFactor;
+      } else {
+        this.speed -= this.friction;
+      }
+      this.speed = Math.max(0, Math.min(this.speed, this.maxSpeed * speedFactor));
+      if (this.speed > 0.2) {
+        if (keys.ArrowLeft) this.angle -= this.turnSpeed;
+        if (keys.ArrowRight) this.angle += this.turnSpeed;
+      }
     }
 
     this.x += Math.cos(this.angle * Math.PI / 180) * this.speed;
@@ -91,27 +108,71 @@ class Kart {
   }
 }
 
-const player = new Kart(400, 400);
+// Waypoints for AI path (adjust based on your track)
+const waypoints = [
+  {x: 400, y: 400},
+  {x: 800, y: 400},
+  {x: 800, y: 800},
+  {x: 400, y: 800}
+];
+
+const player = new Kart(400, 400, 'red', false);
+const enemies = [
+  new Kart(420, 420, 'blue', true),
+  new Kart(440, 440, 'green', true)
+];
+
+function drawMinimap() {
+  const miniW = 200;
+  const miniH = 200 * (trackImage.height / trackImage.width);
+  const margin = 20;
+
+  ctx.save();
+  ctx.globalAlpha = 0.8;
+  ctx.drawImage(trackImage, canvas.width - miniW - margin, margin, miniW, miniH);
+  ctx.globalAlpha = 1;
+
+  // Player dot
+  const dotX = (player.x / (trackImage.width * MAP_SCALE)) * miniW;
+  const dotY = (player.y / (trackImage.height * MAP_SCALE)) * miniH;
+  ctx.fillStyle = "red";
+  ctx.beginPath();
+  ctx.arc(canvas.width - miniW - margin + dotX, margin + dotY, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Enemy dots
+  ctx.fillStyle = "yellow";
+  enemies.forEach(e => {
+    const ex = (e.x / (trackImage.width * MAP_SCALE)) * miniW;
+    const ey = (e.y / (trackImage.height * MAP_SCALE)) * miniH;
+    ctx.beginPath();
+    ctx.arc(canvas.width - miniW - margin + ex, margin + ey, 4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.restore();
+}
 
 function gameLoop() {
-  player.update();
+  if (!terrainLoaded) {
+    requestAnimationFrame(gameLoop);
+    return;
+  }
 
-  // Camera centered on player
+  player.update();
+  enemies.forEach(e => e.update());
+
   const camX = player.x - canvas.width / 2;
   const camY = player.y - canvas.height / 2;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Draw track
-  if (terrainLoaded) {
-    ctx.drawImage(trackImage, -camX, -camY);
-  } else {
-    ctx.fillStyle = "#333";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
+  ctx.drawImage(trackImage, -camX, -camY, trackImage.width * MAP_SCALE, trackImage.height * MAP_SCALE);
 
-  // Draw player
   player.draw(camX, camY);
+  enemies.forEach(e => e.draw(camX, camY));
+
+  drawMinimap();
 
   requestAnimationFrame(gameLoop);
 }
