@@ -1,116 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>2D Racing Game with Smart AI</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #000; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
 <canvas id="gameCanvas"></canvas>
-<script>
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-
-const trackImg = new Image();
-trackImg.src = 'track.png';
-
-const waypoints = [
-  { x: 512, y: 220 }, { x: 760, y: 220 }, { x: 840, y: 260 },
-  { x: 860, y: 512 }, { x: 840, y: 760 }, { x: 760, y: 800 },
-  { x: 512, y: 800 }, { x: 260, y: 800 }, { x: 200, y: 760 },
-  { x: 180, y: 620 }, { x: 240, y: 512 }, { x: 300, y: 460 },
-  { x: 420, y: 420 }, { x: 520, y: 400 }, { x: 620, y: 420 },
-  { x: 680, y: 460 }, { x: 700, y: 512 }, { x: 680, y: 560 },
-  { x: 620, y: 600 }, { x: 520, y: 620 }, { x: 420, y: 600 },
-  { x: 360, y: 560 }, { x: 340, y: 512 }, { x: 360, y: 460 },
-  { x: 420, y: 420 }, { x: 512, y: 400 }
-];
-
-class Car {
-  constructor(x, y, color, isAI = false) {
-    this.x = x;
-    this.y = y;
-    this.angle = 0;
-    this.speed = 0;
-    this.color = color;
-    this.isAI = isAI;
-    this.targetIndex = 0;
-  }
-  update() {
-    if (this.isAI) {
-      const target = waypoints[this.targetIndex];
-      const dx = target.x - this.x;
-      const dy = target.y - this.y;
-      const targetAngle = Math.atan2(dy, dx);
-      let angleDiff = targetAngle - this.angle;
-      angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-      this.angle += angleDiff * 0.05;
-      this.speed = 2;
-      this.x += Math.cos(this.angle) * this.speed;
-      this.y += Math.sin(this.angle) * this.speed;
-      if (Math.hypot(dx, dy) < 20) {
-        this.targetIndex = (this.targetIndex + 1) % waypoints.length;
-      }
-    } else {
-      // Player controls
-      if (keys.ArrowUp) this.speed += 0.1;
-      if (keys.ArrowDown) this.speed -= 0.1;
-      if (keys.ArrowLeft) this.angle -= 0.05;
-      if (keys.ArrowRight) this.angle += 0.05;
-      this.speed *= 0.98;
-      this.x += Math.cos(this.angle) * this.speed;
-      this.y += Math.sin(this.angle) * this.speed;
-    }
-  }
-  draw() {
-    ctx.save();
-    ctx.translate(this.x, this.y);
-    ctx.rotate(this.angle);
-    ctx.fillStyle = this.color;
-    ctx.fillRect(-10, -5, 20, 10);
-    ctx.restore();
-  }
-}
-
-const player = new Car(512, 512, 'red', false);
-const aiCars = [
-  new Car(500, 500, 'blue', true),
-  new Car(530, 500, 'green', true)
-];
-
-const keys = {};
-window.addEventListener('keydown', e => keys[e.key] = true);
-window.addEventListener('keyup', e => keys[e.key] = false);
-
-function drawMinimap() {
-  const scale = 0.2;
-  ctx.save();
-  ctx.translate(canvas.width - trackImg.width * scale - 10, 10);
-  ctx.scale(scale, scale);
-  ctx.drawImage(trackImg, 0, 0);
-  player.draw();
-  aiCars.forEach(car => car.draw());
-  ctx.restore();
-}
-
-function gameLoop() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Draw scaled track
-  const scale = Math.min(canvas.width / trackImg.width, canvas.height / trackImg.height);
-  ctx.save();
-  ctx.scale(scale, scale);
-  ctx.drawImage(trackImg, 0, 0);
-  ctx.restore();
-
-  // Update & draw cars
-  player.update();
-  aiCars.forEach(car => car.update());
-
-  ctx.save();
-  ctx.scale(scale, scale);
-  player.draw();
-  aiCars.forEach(car => car.draw());
-  ctx.restore();
-
-  drawMinimap();
-  requestAnimationFrame(gameLoop);
-}
-
-trackImg.onload = gameLoop;
-</script>
+<script src="ai.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
