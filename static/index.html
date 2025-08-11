@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Racing (client)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    html,body { height:100%; margin:0; background:#000; }
+    #gameCanvas { display:block; width:100vw; height:100vh; }
+    #overlay { position:fixed; top:8px; left:8px; color:#fff; font-family:Arial; z-index:10;}
+  </style>
+</head>
+<body>
+  <div id="overlay">WASD / Arrow keys to drive — AI follows centerline</div>
+  <canvas id="gameCanvas"></canvas>
+  <script src="main.js"></script>
+</body>
+</html>
