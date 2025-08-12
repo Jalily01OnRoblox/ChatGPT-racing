@@ -1,117 +1,143 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import math
+import heapq
+import random
 from PIL import Image
-import heapq, math
 
-# --------------------
-# CONFIG
-# --------------------
-TRACK_IMAGE = "track.png"
-SPAWN_PERCENT_X = 0.5     # middle horizontally
-SPAWN_PERCENT_Y = 0.2     # 20% down vertically
-CHECKPOINT_STEP = 150     # pixels between checkpoints
-SEARCH_RADIUS = 200       # for local A* search
+# === CONFIG ===
+TRACK_IMAGE_PATH = "track.png"
+WAYPOINT_SPACING = 15  # pixels between AI waypoints
+CAR_SPEED = 2  # pixels per update
 
-# --------------------
-# LOAD TRACK
-# --------------------
-img = Image.open(TRACK_IMAGE).convert("RGB")
-WIDTH, HEIGHT = img.size
-pixels = img.load()
-
-# Boolean walkable map
-walkable = [[pixels[x, y] != (0, 0, 0) for x in range(WIDTH)] for y in range(HEIGHT)]
-
-# Spawn point
-spawn_x = int(WIDTH * SPAWN_PERCENT_X)
-spawn_y = int(HEIGHT * SPAWN_PERCENT_Y)
-
-# --------------------
-# AUTO-GENERATE CHECKPOINTS
-# --------------------
-checkpoints = []
-visited = [[False]*WIDTH for _ in range(HEIGHT)]
-
-def bfs_path(start_x, start_y, step):
-    from collections import deque
-    q = deque()
-    q.append((start_x, start_y))
-    visited[start_y][start_x] = True
-    count = 0
-    while q:
-        x, y = q.popleft()
-        count += 1
-        if count % step == 0:
-            checkpoints.append((x, y))
-        for dx, dy in [(1,0),(-1,0),(0,1),(0,-1)]:
-            nx, ny = x+dx, y+dy
-            if 0 <= nx < WIDTH and 0 <= ny < HEIGHT:
-                if not visited[ny][nx] and walkable[ny][nx]:
-                    visited[ny][nx] = True
-                    q.append((nx, ny))
-
-bfs_path(spawn_x, spawn_y, CHECKPOINT_STEP)
-
-# Loop path: connect last checkpoint back to first
-checkpoints.append(checkpoints[0])
-
-# --------------------
-# A* PATHFINDING
-# --------------------
-def heuristic(a, b):
-    return math.dist(a, b)
-
-def astar(start, goal):
-    sx, sy = start
-    gx, gy = goal
-    queue = [(0, (sx, sy))]
-    came_from = {}
-    cost_so_far = { (sx, sy): 0 }
-
-    while queue:
-        _, current = heapq.heappop(queue)
-        if current == (gx, gy):
-            break
-        cx, cy = current
-        for dx, dy in [(1,0),(-1,0),(0,1),(0,-1)]:
-            nx, ny = cx+dx, cy+dy
-            if 0 <= nx < WIDTH and 0 <= ny < HEIGHT and walkable[ny][nx]:
-                new_cost = cost_so_far[current] + 1
-                if (nx, ny) not in cost_so_far or new_cost < cost_so_far[(nx, ny)]:
-                    cost_so_far[(nx, ny)] = new_cost
-                    priority = new_cost + heuristic((nx, ny), (gx, gy))
-                    heapq.heappush(queue, (priority, (nx, ny)))
-                    came_from[(nx, ny)] = current
-    # Reconstruct path
-    path = []
-    node = (gx, gy)
-    while node in came_from:
-        path.append(node)
-        node = came_from[node]
-    path.append((sx, sy))
-    path.reverse()
-    return path
-
-# --------------------
-# API
-# --------------------
+# === FastAPI setup ===
 app = FastAPI()
 
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all for now
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# === Track loading ===
+track_img = Image.open(TRACK_IMAGE_PATH).convert("RGB")
+width, height = track_img.size
+pixels = track_img.load()
+
+def is_track(x, y):
+    """Check if pixel is driveable (white track)"""
+    if 0 <= x < width and 0 <= y < height:
+        r, g, b = pixels[x, y]
+        return r > 200 and g > 200 and b > 200
+    return False
+
+# === AI State ===
+cars = []
+waypoints = []
+
+class Car:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.path = []
+        self.target_index = 0
+
+# === Pathfinding ===
+def heuristic(a, b):
+    return math.hypot(b[0] - a[0], b[1] - a[1])
+
+def a_star(start, goal):
+    open_set = []
+    heapq.heappush(open_set, (0, start))
+    came_from = {}
+    g_score = {start: 0}
+    f_score = {start: heuristic(start, goal)}
+
+    while open_set:
+        _, current = heapq.heappop(open_set)
+        if current == goal:
+            path = []
+            while current in came_from:
+                path.append(current)
+                current = came_from[current]
+            path.append(start)
+            path.reverse()
+            return path
+
+        for dx, dy in [(-1,0),(1,0),(0,-1),(0,1)]:
+            neighbor = (current[0] + dx, current[1] + dy)
+            if not is_track(*neighbor):
+                continue
+            tentative_g = g_score[current] + 1
+            if neighbor not in g_score or tentative_g < g_score[neighbor]:
+                came_from[neighbor] = current
+                g_score[neighbor] = tentative_g
+                f_score[neighbor] = tentative_g + heuristic(neighbor, goal)
+                heapq.heappush(open_set, (f_score[neighbor], neighbor))
+    return []
+
+# === Generate waypoints around track (lap loop) ===
+def generate_loop_waypoints():
+    points = []
+    for y in range(0, height, WAYPOINT_SPACING):
+        for x in range(0, width, WAYPOINT_SPACING):
+            if is_track(x, y):
+                points.append((x, y))
+    return points
+
+waypoints = generate_loop_waypoints()
+
+# === API Models ===
 class PathRequest(BaseModel):
     start_x: int
     start_y: int
-    target_index: int
+    goal_x: int
+    goal_y: int
 
-@app.post("/get_path")
-def get_path(req: PathRequest):
-    target = checkpoints[req.target_index % len(checkpoints)]
-    path = astar((req.start_x, req.start_y), target)
-    return {"path": path, "next_index": (req.target_index+1) % len(checkpoints)}
-
+# === Routes ===
 @app.get("/spawn")
-def spawn():
-    return {
-        "spawn_x": spawn_x,
-        "spawn_y": spawn_y,
-        "checkpoints": checkpoints
-    }
+def spawn_car():
+    """Spawn a single AI car on track"""
+    while True:
+        x = random.randint(0, width-1)
+        y = random.randint(0, height-1)
+        if is_track(x, y):
+            car = Car(x, y)
+            cars.append(car)
+            return {"x": x, "y": y}
+
+@app.post("/path")
+def get_path(data: PathRequest):
+    """Generate a path from start to goal using A*"""
+    path = a_star((data.start_x, data.start_y), (data.goal_x, data.goal_y))
+    return {"path": path}
+
+@app.get("/update_ai")
+def update_ai():
+    """Move AI cars along their lap loop"""
+    results = []
+    for car in cars:
+        if not car.path:
+            # Choose next waypoint randomly for now
+            target = random.choice(waypoints)
+            car.path = a_star((car.x, car.y), target)
+            car.target_index = 0
+
+        if car.target_index < len(car.path):
+            tx, ty = car.path[car.target_index]
+            dx = tx - car.x
+            dy = ty - car.y
+            dist = math.hypot(dx, dy)
+            if dist < CAR_SPEED:
+                car.x, car.y = tx, ty
+                car.target_index += 1
+            else:
+                car.x += int(CAR_SPEED * dx / dist)
+                car.y += int(CAR_SPEED * dy / dist)
+
+        results.append({"x": car.x, "y": car.y})
+    return results
